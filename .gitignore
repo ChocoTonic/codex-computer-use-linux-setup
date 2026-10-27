@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+target/
+dist/
+*.tar.gz
+*.zip
+*.log
+verification/
+private-results/
+.env
+auth.json
+config.toml
+*.sqlite*

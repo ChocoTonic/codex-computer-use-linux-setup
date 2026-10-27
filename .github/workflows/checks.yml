@@ -1,0 +1,43 @@
+name: Checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.4'
+      - run: uv sync --locked
+      - run: uv run --locked python -m unittest discover -s tests -v
+      - run: uv run --locked python -m compileall -q scripts tests
+      - name: Validate the patch against the pinned upstream commit
+        run: |
+          git clone --depth 1 --branch v0.7.27 https://github.com/agent-sh/computer-use-linux.git /tmp/cu-upstream
+          test "$(git -C /tmp/cu-upstream rev-parse HEAD)" = 3bb80c77be8e5fee5f871c2443ffed2c5156b5d1
+          git -C /tmp/cu-upstream apply --check "$GITHUB_WORKSPACE/patches/x11-drag.patch"
+  desktop:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.4'
+      - name: Install X11 test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config git python3 python3-gi gir1.2-gtk-3.0 at-spi2-core libatk-adaptor xdotool wmctrl dbus-x11 xvfb openbox
+      - name: Build and install the pinned backend
+        run: uv run --locked scripts/setup.py
+      - name: Exercise the disposable desktop
+        run: |
+          dbus-run-session -- xvfb-run -a sh -c 'openbox >/tmp/openbox.log 2>&1 & uv run --locked scripts/verify.py --desktop --enable-accessibility'

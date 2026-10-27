@@ -1,0 +1,16 @@
+[project]
+name = "codex-computer-use-lubuntu-setup"
+version = "0.1.0"
+description = "Pinned computer-use MCP setup and verification for Codex on Lubuntu 22.04 X11"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "ChocoTonic" }]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/ChocoTonic/codex-computer-use-linux-setup"
+Upstream = "https://github.com/agent-sh/computer-use-linux"
+
+[tool.uv]
+package = false

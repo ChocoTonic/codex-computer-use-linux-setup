@@ -1,0 +1,91 @@
+diff --git a/src/server.rs b/src/server.rs
+index 88a5c54..4754336 100644
+--- a/src/server.rs
++++ b/src/server.rs
+@@ -1891,6 +1891,21 @@ impl ComputerUseLinux {
+         if self.is_wayland_session() {
+             return Json(unsafe_pointer_fallback("drag", received));
+         }
++        if self.should_prefer_xdotool_pointer() {
++            let (input_guard, result) = run_cancellation_safe_input(input_guard, async move {
++                run_xdotool_drag(Path::new("xdotool"), &params).await
++            })
++            .await;
++            let _input_guard = input_guard;
++            let used_xdotool = result
++                .as_ref()
++                .is_ok_and(|result| result.backend == KeyboardCommandBackend::Xdotool);
++            let mut output = action_result("drag", result.map(|result| result.outputs), received);
++            if output.ok && used_xdotool {
++                output.message = "Action sent through xdotool (X11 XTEST).".to_string();
++            }
++            return Json(output);
++        }
+         let (input_guard, result) = run_cancellation_safe_input(input_guard, async move {
+             run_ydotool_drag(params.start_x, params.start_y, params.end_x, params.end_y).await
+         })
+@@ -7072,6 +7087,64 @@ async fn run_ydotool_sequence(
+     Ok(outputs)
+ }
+ 
++async fn run_xdotool_drag(
++    program: &Path,
++    params: &DragParams,
++) -> std::result::Result<PointerCommandResult, String> {
++    let mut args = vec![
++        "mousemove".into(),
++        "--".into(),
++        params.start_x.to_string(),
++        params.start_y.to_string(),
++        "mousedown".into(),
++        "1".into(),
++        "sleep".into(),
++        "0.035".into(),
++    ];
++    // Several paced moves let GTK process drag-start and drag-enter before release.
++    for step in 1..=12_i64 {
++        let x = i64::from(params.start_x)
++            + (i64::from(params.end_x) - i64::from(params.start_x)) * step / 12;
++        let y = i64::from(params.start_y)
++            + (i64::from(params.end_y) - i64::from(params.start_y)) * step / 12;
++        args.extend([
++            "mousemove".into(),
++            "--".into(),
++            x.to_string(),
++            y.to_string(),
++            "sleep".into(),
++            "0.02".into(),
++        ]);
++    }
++    args.extend(["mouseup".into(), "1".into()]);
++    match run_xdotool(program, &args).await {
++        XdotoolAttempt::Unavailable => {
++            run_ydotool_drag(params.start_x, params.start_y, params.end_x, params.end_y)
++                .await
++                .map(|outputs| PointerCommandResult {
++                    outputs,
++                    backend: KeyboardCommandBackend::Ydotool,
++                })
++        }
++        XdotoolAttempt::Finished(Ok(output)) => Ok(PointerCommandResult {
++            outputs: vec![output],
++            backend: KeyboardCommandBackend::Xdotool,
++        }),
++        XdotoolAttempt::Finished(Err(error)) => {
++            // Input may already have started. Release the button, never replay the drag.
++            match run_xdotool(program, &["mouseup".into(), "1".into()]).await {
++                XdotoolAttempt::Finished(Ok(_)) => Err(error),
++                XdotoolAttempt::Finished(Err(release_error)) => Err(format!(
++                    "{error}; xdotool button release also failed: {release_error}"
++                )),
++                XdotoolAttempt::Unavailable => {
++                    Err(format!("{error}; xdotool button release could not start"))
++                }
++            }
++        }
++    }
++}
++
+ async fn run_ydotool_drag(
+     start_x: i32,
+     start_y: i32,
