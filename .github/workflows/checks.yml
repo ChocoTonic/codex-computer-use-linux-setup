@@ -35,11 +35,33 @@ jobs:
       - name: Install X11 test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config git python3 python3-gi gir1.2-gtk-3.0 at-spi2-core libatk-adaptor xdotool wmctrl dbus-x11 xvfb openbox
+          sudo apt-get install -y build-essential pkg-config git python3 python3-gi gir1.2-gtk-3.0 at-spi2-core libatk-adaptor xdotool wmctrl dbus-x11 xvfb openbox xterm
+      - name: Cache Rust build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.local/share/codex-computer-use-linux/source/target
+          key: ubuntu-22.04-cu-v0.7.27-${{ hashFiles('patches/x11-drag.patch') }}
       - name: Build and install the pinned backend
         run: uv run --locked scripts/setup.py
       - name: Exercise the disposable desktop
         run: |
           export XDG_RUNTIME_DIR="$(mktemp -d)"
           chmod 700 "$XDG_RUNTIME_DIR"
-          dbus-run-session -- xvfb-run -a sh -c 'openbox >/tmp/openbox.log 2>&1 & uv run --locked scripts/verify.py --desktop --enable-accessibility'
+          dbus-run-session -- xvfb-run -a sh -c '
+            openbox >/tmp/openbox.log 2>&1 &
+            xterm -title "CI desktop baseline" >/tmp/xterm.log 2>&1 &
+            for attempt in $(seq 1 100); do
+              if wmctrl -l | grep -q "CI desktop baseline"; then break; fi
+              sleep 0.1
+            done
+            wmctrl -l | grep "CI desktop baseline"
+            uv run --locked scripts/verify.py --desktop --enable-accessibility
+          '
+      - name: Print desktop diagnostics on failure
+        if: failure()
+        run: |
+          cat /tmp/openbox.log /tmp/xterm.log 2>/dev/null || true
+          find "$HOME/.local/state/codex-computer-use-linux/verification" -name desktop-checks.log -exec tail -100 {} \; 2>/dev/null || true
