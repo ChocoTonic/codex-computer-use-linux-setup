@@ -101,6 +101,9 @@ exec BINARY "$@"
 def build(source):
     if not source.exists():
         subprocess.run(["git", "clone", "--no-checkout", UPSTREAM, str(source)], check=True)
+        # A no-checkout clone reports every tracked file as deleted until the
+        # first checkout. Materialize the pin before checking for local edits.
+        subprocess.run(["git", "-C", str(source), "checkout", "--detach", COMMIT], check=True)
     actual = subprocess.check_output(["git", "-C", str(source), "remote", "get-url", "origin"], text=True).strip()
     if actual != UPSTREAM:
         raise ValueError("Build directory has an unexpected Git origin: " + actual)

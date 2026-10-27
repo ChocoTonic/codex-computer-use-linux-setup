@@ -40,4 +40,6 @@ jobs:
         run: uv run --locked scripts/setup.py
       - name: Exercise the disposable desktop
         run: |
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          chmod 700 "$XDG_RUNTIME_DIR"
           dbus-run-session -- xvfb-run -a sh -c 'openbox >/tmp/openbox.log 2>&1 & uv run --locked scripts/verify.py --desktop --enable-accessibility'
